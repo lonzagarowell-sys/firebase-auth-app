@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(to bottom right, #7928CA, #FF0080); /* purple-pink gradient */
+  color: white; /* optional: make text white by default */
+}

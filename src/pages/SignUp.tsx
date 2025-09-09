@@ -20,30 +20,33 @@ export default function SignUp() {
     setLoading(true);
 
     try {
-      // ✅ Create user in Firebase Auth
+      // 1️⃣ Create user in Firebase Auth
       const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const user = cred.user;
 
-      // ✅ Add displayName + default avatar
-      await updateProfile(cred.user, {
+      // 2️⃣ Update displayName & avatar
+      await updateProfile(user, {
         displayName,
         photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(
           displayName || email
         )}&background=random&color=fff`,
       });
 
-      // ✅ Save user profile in Firestore
-      await setDoc(doc(db, "users", cred.user.uid), {
-        uid: cred.user.uid,
+      // 3️⃣ Create Firestore document
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
         email,
         displayName: displayName || email,
-        role: "user", // 👈 default role
+        role: "user", // default role
+        photoURL: user.photoURL,
         createdAt: new Date(),
       });
 
       console.log("✅ User registered with role:user");
       navigate("/"); // redirect after signup
     } catch (err: any) {
-      setError(err.message);
+      console.error("Signup error:", err);
+      setError(err.message || "Something went wrong during signup.");
     } finally {
       setLoading(false);
     }

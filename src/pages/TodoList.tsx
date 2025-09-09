@@ -20,7 +20,7 @@ interface Task {
   title: string;
   completed: boolean;
   createdAt: any;
-  uid: string;
+  userId: string; // 🔹 renamed from uid → userId
 }
 
 export default function TodoList() {
@@ -35,7 +35,7 @@ export default function TodoList() {
 
     const q = query(
       collection(db, "tasks"),
-      where("uid", "==", user.uid),
+      where("userId", "==", user.uid), // 🔹 updated field name
       orderBy("createdAt", "desc")
     );
 
@@ -65,7 +65,7 @@ export default function TodoList() {
       await addDoc(collection(db, "tasks"), {
         title: newTask.trim(),
         completed: false,
-        uid: user.uid,
+        userId: user.uid, // 🔹 must match Firestore rules
         createdAt: serverTimestamp(),
       });
       setNewTask("");

@@ -5,7 +5,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { useEffect, useState } from "react";
-import { collection, query, orderBy, onSnapshot, where } from "firebase/firestore";
+import { collection, query, onSnapshot, where } from "firebase/firestore"; // The orderBy is not needed here
 import { motion } from "framer-motion";
 
 // Components & Pages
@@ -60,13 +60,23 @@ function Home() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
+    // Only run this effect if the user is authenticated
     if (!user) return;
+
+    // ✅ FIX: Query for messages sent to the user that are not read
     const q = query(
-      collection(db, "messages"),
-      where("uid", "!=", user.uid),
-      orderBy("createdAt", "asc")
+      collection(db, "chats"), // Use the "chats" collection as per your rules
+      where("isRead", "==", false),
+      where("recipientId", "==", user.uid) // Assuming messages have a recipientId field
     );
-    const unsub = onSnapshot(q, (snap) => setUnreadCount(snap.size));
+    
+    // Listen for real-time changes
+    const unsub = onSnapshot(q, (snapshot) => {
+      // The snapshot size will automatically be the number of documents matching the query
+      setUnreadCount(snapshot.size);
+    });
+
+    // Cleanup the listener when the component unmounts or the user logs out
     return () => unsub();
   }, [user]);
 

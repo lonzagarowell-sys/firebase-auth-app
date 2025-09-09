@@ -13,13 +13,12 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
-import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore"; // No more onSnapshot
 import { auth, db } from "../firebase";
 
 // Context type
 interface AuthContextType {
   user: User | null;
-  role: string | null; // "admin" or "user"
   loading: boolean;
   logout: () => Promise<void>;
   signup: (
@@ -32,7 +31,6 @@ interface AuthContextType {
 // Default context values
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  role: null,
   loading: true,
   logout: async () => {},
   signup: async () => {},
@@ -43,55 +41,22 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 🔹 Auth listener
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setRole(null);
-
-      if (currentUser) {
-        const userRef = doc(db, "users", currentUser.uid);
-
-        // 🔹 Firestore role listener
-        const unsubscribeSnapshot = onSnapshot(
-          userRef,
-          (docSnap) => {
-            if (docSnap.exists()) {
-              setRole(docSnap.data().role || "user");
-            } else {
-              setRole("user"); // fallback if doc missing
-            }
-            setLoading(false);
-          },
-          (error) => {
-            console.error("Firestore snapshot error:", error);
-            setRole("user");
-            setLoading(false);
-          }
-        );
-
-        // ✅ Cleanup Firestore listener
-        return () => unsubscribeSnapshot();
-      } else {
-        setLoading(false);
-      }
+      setLoading(false);
     });
 
-    // ✅ Cleanup auth listener
     return () => unsubscribeAuth();
   }, []);
 
-  // 🔹 Logout
   const logout = async () => {
     await signOut(auth);
     setUser(null);
-    setRole(null);
   };
 
-  // 🔹 Signup
   const signup = async (
     email: string,
     password: string,
@@ -104,16 +69,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         await updateProfile(cred.user, { displayName });
       }
 
-      // 🔹 Create Firestore user doc
       await setDoc(doc(db, "users", cred.user.uid), {
         uid: cred.user.uid,
         email,
         displayName: displayName || email,
-        role: "user", // default role
+        role: "user",
         createdAt: serverTimestamp(),
       });
 
-      setRole("user");
       console.log("✅ User registered with role:user");
     } catch (err) {
       console.error("❌ Signup failed:", err);
@@ -122,7 +85,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, logout, signup }}>
+    <AuthContext.Provider value={{ user, loading, logout, signup }}>
       {loading ? (
         <div className="flex items-center justify-center h-screen">
           <span className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent"></span>

@@ -1,9 +1,11 @@
+// src/pages/Login.tsx
 import { useState } from "react";
 import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   GoogleAuthProvider,
   signInWithPopup,
+  type User,
 } from "firebase/auth";
 import { auth, db } from "../firebase";
 import { doc, setDoc, getDoc } from "firebase/firestore";
@@ -17,25 +19,36 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Email/Password login
+  // -------------------------
+  // EMAIL / PASSWORD LOGIN
+  // -------------------------
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setLoading(true);
 
+    if (!email || !email.includes("@")) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate("/"); // success
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log("Login successful:", userCredential.user);
+      navigate("/"); // redirect to home
     } catch (err: any) {
       switch (err.code) {
         case "auth/user-not-found":
-          setError("No user found with this email.");
+          setError("No account found with this email.");
           break;
         case "auth/wrong-password":
           setError("Incorrect password.");
           break;
         case "auth/too-many-requests":
           setError("Too many failed attempts. Try again later.");
+          break;
+        case "auth/invalid-email":
+          setError("Invalid email format.");
           break;
         default:
           setError(err.message);
@@ -46,10 +59,12 @@ export default function Login() {
     }
   };
 
-  // Password reset
+  // -------------------------
+  // PASSWORD RESET
+  // -------------------------
   const handleForgotPassword = async () => {
     if (!email) {
-      setError("Please enter your email to reset the password.");
+      setError("Please enter your email to reset password.");
       return;
     }
     setLoading(true);
@@ -64,7 +79,9 @@ export default function Login() {
     }
   };
 
-  // Google login
+  // -------------------------
+  // GOOGLE LOGIN
+  // -------------------------
   const handleGoogleLogin = async () => {
     setError(null);
     setLoading(true);
@@ -72,9 +89,9 @@ export default function Login() {
 
     try {
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const user: User = result.user;
 
-      // Add user to Firestore if first login
+      // Add user to Firestore if new
       const userRef = doc(db, "users", user.uid);
       const snapshot = await getDoc(userRef);
       if (!snapshot.exists()) {
@@ -91,7 +108,7 @@ export default function Login() {
         });
       }
 
-      navigate("/"); // redirect after Google login
+      navigate("/"); // redirect after login
     } catch (err: any) {
       if (err.code === "auth/popup-closed-by-user") {
         setError("Google login popup was closed before completion.");
@@ -120,15 +137,16 @@ export default function Login() {
           type="email"
           placeholder="Email"
           className="w-full p-2 rounded-lg bg-white/20 text-white placeholder-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          onChange={(e) => setEmail(e.target.value)}
           value={email}
+          onChange={(e) => setEmail(e.target.value)}
         />
+
         <input
           type="password"
           placeholder="Password"
           className="w-full p-2 rounded-lg bg-white/20 text-white placeholder-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          onChange={(e) => setPassword(e.target.value)}
           value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
 
         <div className="flex justify-between items-center text-sm text-white">

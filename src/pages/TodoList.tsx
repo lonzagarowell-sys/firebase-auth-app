@@ -15,86 +15,102 @@ import {
 } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 
-interface Task {
+interface Todo {
   id: string;
   title: string;
   completed: boolean;
   createdAt: any;
-  userId: string; // 🔹 renamed from uid → userId
+  userId: string;
 }
 
 export default function TodoList() {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [newTask, setNewTask] = useState("");
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [newTodo, setNewTodo] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Load tasks for current user
+  // Load todos for the current user
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, "tasks"),
-      where("userId", "==", user.uid), // 🔹 updated field name
+    const todosQuery = query(
+      collection(db, "todos"),
+      where("userId", "==", user.uid),
       orderBy("createdAt", "desc")
     );
 
     const unsubscribe = onSnapshot(
-      q,
+      todosQuery,
       (snapshot) => {
-        const list: Task[] = snapshot.docs.map((doc) => ({
+        const list: Todo[] = snapshot.docs.map((doc) => ({
           id: doc.id,
-          ...(doc.data() as Omit<Task, "id">),
+          ...(doc.data() as Omit<Todo, "id">),
         }));
-        setTasks(list);
+        setTodos(list);
         setLoading(false);
       },
       (error) => {
         console.error("Firestore snapshot error:", error);
-        alert("Unable to load tasks. Please try again later.");
+        alert(
+          "Unable to load your todos. Check that you are logged in and have proper permissions."
+        );
       }
     );
 
     return () => unsubscribe();
   }, [user]);
 
-  // Add a new task
+  // Add a new todo
   const handleAdd = async () => {
-    if (!newTask.trim() || !user) return;
+    if (!user || !newTodo.trim()) return;
+
     try {
-      await addDoc(collection(db, "tasks"), {
-        title: newTask.trim(),
+      await addDoc(collection(db, "todos"), {
+        title: newTodo.trim(),
         completed: false,
-        userId: user.uid, // 🔹 must match Firestore rules
+        userId: user.uid,
         createdAt: serverTimestamp(),
       });
-      setNewTask("");
+      setNewTodo("");
     } catch (err) {
-      console.error("Add task failed:", err);
-      alert("Failed to add task.");
+      console.error("Add todo failed:", err);
+      alert("Failed to add todo. Make sure you have permission.");
     }
   };
 
   // Toggle completion
-  const handleToggle = async (task: Task) => {
+  const handleToggle = async (todo: Todo) => {
+    if (!user || todo.userId !== user.uid) return;
+
     try {
-      const taskRef = doc(db, "tasks", task.id);
-      await updateDoc(taskRef, { completed: !task.completed });
+      const todoRef = doc(db, "todos", todo.id);
+      await updateDoc(todoRef, { completed: !todo.completed });
     } catch (err) {
       console.error("Toggle failed:", err);
-      alert("Failed to update task.");
+      alert("Failed to update todo. Make sure you have permission.");
     }
   };
 
-  // Delete a task
-  const handleDelete = async (taskId: string) => {
+  // Delete a todo
+  const handleDelete = async (todo: Todo) => {
+    if (!user || todo.userId !== user.uid) return;
+
     try {
-      await deleteDoc(doc(db, "tasks", taskId));
+      const todoRef = doc(db, "todos", todo.id);
+      await deleteDoc(todoRef);
     } catch (err) {
       console.error("Delete failed:", err);
-      alert("Failed to delete task.");
+      alert("Failed to delete todo. Make sure you have permission.");
     }
   };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex justify-center items-center text-white">
+        <p>Please log in to view your To-Do List.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-700 via-pink-600 to-red-500 text-white p-8 flex justify-center items-start">
@@ -104,9 +120,9 @@ export default function TodoList() {
         <div className="flex gap-2 mb-4">
           <input
             type="text"
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Add a new task..."
+            value={newTodo}
+            onChange={(e) => setNewTodo(e.target.value)}
+            placeholder="Add a new todo..."
             className="flex-1 p-2 rounded-lg text-black"
           />
           <button
@@ -118,33 +134,31 @@ export default function TodoList() {
         </div>
 
         {loading ? (
-          <p className="text-center text-gray-200">Loading tasks...</p>
-        ) : tasks.length === 0 ? (
-          <p className="text-center text-gray-300">No tasks yet!</p>
+          <p className="text-center text-gray-200">Loading todos...</p>
+        ) : todos.length === 0 ? (
+          <p className="text-center text-gray-300">No todos yet!</p>
         ) : (
           <ul className="space-y-2">
-            {tasks.map((task) => (
+            {todos.map((todo) => (
               <li
-                key={task.id}
+                key={todo.id}
                 className="flex justify-between items-center p-3 bg-white/20 backdrop-blur-md rounded-lg shadow hover:shadow-lg transition"
               >
                 <div className="flex items-center">
                   <input
                     type="checkbox"
-                    checked={task.completed}
-                    onChange={() => handleToggle(task)}
+                    checked={todo.completed}
+                    onChange={() => handleToggle(todo)}
                     className="mr-2"
                   />
                   <span
-                    className={
-                      task.completed ? "line-through text-gray-400" : ""
-                    }
+                    className={todo.completed ? "line-through text-gray-400" : ""}
                   >
-                    {task.title}
+                    {todo.title}
                   </span>
                 </div>
                 <button
-                  onClick={() => handleDelete(task.id)}
+                  onClick={() => handleDelete(todo)}
                   className="text-red-300 hover:text-red-500 transition"
                 >
                   Delete

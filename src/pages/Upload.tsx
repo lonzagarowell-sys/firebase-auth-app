@@ -37,38 +37,46 @@ export default function Upload() {
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, "uploads"),
-      where("uid", "==", user.uid),
-      orderBy("createdAt", "desc")
-    );
+    try {
+      const q = query(
+        collection(db, "uploads"),
+        where("uid", "==", user.uid),
+        orderBy("createdAt", "desc")
+      );
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot: QuerySnapshot<DocumentData>) => {
-        const list: UploadedFile[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<UploadedFile, "id">),
-        }));
-        setFiles(list);
-        setSnapshotError(null);
-      },
-      (error) => {
-        console.error("Firestore snapshot error:", error);
-        setSnapshotError(
-          "Cannot load uploaded files yet. Index may still be building."
-        );
-      }
-    );
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          const list: UploadedFile[] = snapshot.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<UploadedFile, "id">),
+          }));
+          setFiles(list);
+          setSnapshotError(null);
+        },
+        (error) => {
+          console.error("Firestore snapshot error:", error);
+          setSnapshotError(
+            "Cannot load uploaded files. Check your Firestore rules or indexing."
+          );
+        }
+      );
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (err: any) {
+      console.error("Unexpected error:", err);
+      setSnapshotError("Unexpected error: " + err.message);
+    }
   }, [user]);
 
-  // Handle Cloudinary upload + Firestore
+  // Handle Cloudinary upload + save metadata to Firestore
   const handleUpload = async () => {
     if (!file || !user) return;
+
     setUploading(true);
     setProgress(0);
+    setSnapshotError(null);
+    setUploadedUrl(null);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -81,8 +89,8 @@ export default function Upload() {
       );
 
       if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error("Cloudinary upload failed: " + errorText);
+        const text = await res.text();
+        throw new Error("Cloudinary upload failed: " + text);
       }
 
       const data = await res.json();
@@ -101,7 +109,7 @@ export default function Upload() {
       setProgress(100);
     } catch (err: any) {
       console.error("Upload failed:", err);
-      alert("Upload failed: " + err.message);
+      setSnapshotError("Upload failed: " + err.message);
     } finally {
       setUploading(false);
     }
@@ -146,7 +154,6 @@ export default function Upload() {
             >
               {uploadedUrl}
             </a>
-            <br />
             {uploadedUrl.match(/\.(jpeg|jpg|png|gif)$/) && (
               <img
                 src={uploadedUrl}

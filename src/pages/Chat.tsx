@@ -11,26 +11,23 @@ import {
 } from "firebase/firestore";
 import {
   onAuthStateChanged,
-  type User,
   signInAnonymously,
-  signInWithCustomToken,
+  type User,
 } from "firebase/auth";
 import { uploadToCloudinary } from "../utils/cloudinary";
-
-const appId = typeof __app_id !== "undefined" ? __app_id : "default-app-id";
-const initialAuthToken =
-  typeof __initial_auth_token !== "undefined" ? __initial_auth_token : null;
 
 interface ChatMessage {
   id: string;
   text: string;
   imageUrl?: string;
-  uid: string;
+  senderId: string;
+  recipientId: string;
   displayName?: string;
   photoURL?: string;
   createdAt: any;
 }
 
+// Hook for auth
 const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,15 +37,7 @@ const useAuth = () => {
       if (currentUser) {
         setUser(currentUser);
       } else {
-        if (initialAuthToken) {
-          try {
-            await signInWithCustomToken(auth, initialAuthToken);
-          } catch {
-            await signInAnonymously(auth);
-          }
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       }
       setLoading(false);
     });
@@ -65,11 +54,12 @@ export default function Chat() {
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // Fetch messages after auth
   useEffect(() => {
     if (!user) return;
 
     const q = query(
-      collection(db, "artifacts", appId, "public", "data", "chats"),
+      collection(db, "artifacts", "default-app-id", "public", "data", "chats"),
       orderBy("createdAt", "asc")
     );
 
@@ -77,7 +67,7 @@ export default function Chat() {
       setMessages(
         snapshot.docs.map(
           (doc) =>
-            ({ id: doc.id, ...(doc.data() as Omit<ChatMessage, "id">) }) as ChatMessage
+            ({ id: doc.id, ...(doc.data() as Omit<ChatMessage, "id">) } as ChatMessage)
         )
       );
     });
@@ -90,75 +80,63 @@ export default function Chat() {
     if (!user || !newMessage.trim()) return;
 
     let imageUrl: string | undefined;
-
     if (file) {
       try {
-        const uploadResult = await uploadToCloudinary(file, (progress) =>
+        const result = await uploadToCloudinary(file, (progress) =>
           setUploadProgress(progress)
         );
-        imageUrl = uploadResult?.secure_url;
+        imageUrl = result?.secure_url;
         setFile(null);
         setUploadProgress(0);
       } catch (err) {
-        console.error("Cloudinary upload error:", err);
+        console.error("Cloudinary upload failed:", err);
       }
     }
 
-    const messageData: any = {
+    const messageData = {
       text: newMessage,
-      uid: user.uid,
+      senderId: user.uid,
+      recipientId: "public", // matches Firestore rules for public chat
       displayName: user.displayName || "Anonymous",
       photoURL: user.photoURL || "",
       createdAt: serverTimestamp(),
+      ...(imageUrl && { imageUrl }),
     };
-
-    if (imageUrl) messageData.imageUrl = imageUrl;
 
     try {
       await addDoc(
-        collection(db, "artifacts", appId, "public", "data", "chats"),
+        collection(db, "artifacts", "default-app-id", "public", "data", "chats"),
         messageData
       );
       setNewMessage("");
     } catch (err) {
-      console.error("Error sending message:", err);
+      console.error("Firestore write failed:", err);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white">
+      <div className="flex justify-center items-center min-h-screen bg-gray-900 text-white">
         <p>Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen text-white p-4 bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+    <div className="flex flex-col h-screen p-4 bg-gray-900 text-white">
       <h2 className="text-2xl font-bold text-center mb-4">💬 Public Chat</h2>
 
-      {/* Chat messages */}
       <div className="flex-1 overflow-y-auto space-y-4 p-4 rounded-xl bg-black/40 border border-gray-700">
         {messages.map((msg) => (
           <div
             key={msg.id}
             className={`p-3 rounded-xl max-w-[75%] ${
-              msg.uid === user?.uid
-                ? "bg-blue-600 self-end"
-                : "bg-gray-700 self-start"
+              user && msg.senderId === user.uid ? "bg-blue-600 self-end" : "bg-gray-700 self-start"
             }`}
           >
-            {msg.displayName && (
-              <p className="font-semibold text-sm mb-1">{msg.displayName}</p>
-            )}
+            {msg.displayName && <p className="font-semibold text-sm mb-1">{msg.displayName}</p>}
             <p>{msg.text}</p>
-            {msg.imageUrl && (
-              <img
-                src={msg.imageUrl}
-                alt="chat image"
-                className="mt-2 max-h-48 rounded"
-              />
-            )}
+            {msg.imageUrl && <img src={msg.imageUrl} alt="chat" className="mt-2 max-h-48 rounded" />}
           </div>
         ))}
       </div>
@@ -167,7 +145,6 @@ export default function Chat() {
         <p className="mt-2 text-sm text-gray-300">Uploading: {uploadProgress}%</p>
       )}
 
-      {/* Input area */}
       <form onSubmit={sendMessage} className="flex gap-2 mt-4">
         <input
           type="text"

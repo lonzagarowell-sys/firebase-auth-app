@@ -1,22 +1,22 @@
 // src/pages/EventsPage.tsx
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, doc, runTransaction } from 'firebase/firestore';
-import { db } from '../firebase'; // Assuming your Firebase config is exported as 'db'
-import { useAuth } from '../context/AuthContext'; // Assuming you have AuthContext for user info
+import { collection, getDocs, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 
 interface Event {
   id: string;
   name: string;
-  date: string; // Consider using Date object or Firestore Timestamp
+  date: string;
   totalSlots: number;
-  bookedSlots: string[]; // Array of user UIDs
+  bookedSlots: string[];
 }
 
 const EventsPage: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth(); // Get current user from AuthContext
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -25,7 +25,7 @@ const EventsPage: React.FC = () => {
         const eventsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
-        })) as Event[]; // Cast to Event array
+        })) as Event[];
         setEvents(eventsData);
       } catch (err) {
         console.error('Error fetching events:', err);
@@ -45,47 +45,35 @@ const EventsPage: React.FC = () => {
     }
 
     const eventRef = doc(db, 'events', eventId);
-    const userId = user.uid;
 
     try {
-      await runTransaction(db, async (transaction) => {
-        const sfDoc = await transaction.get(eventRef);
-        if (!sfDoc.exists()) {
-          throw new Error('Event does not exist!');
-        }
+      // Optimistic UI update first
+      setEvents(prevEvents =>
+        prevEvents.map(event =>
+          event.id === eventId
+            ? { ...event, bookedSlots: [...event.bookedSlots, user.uid] }
+            : event
+        )
+      );
 
-        const eventData = sfDoc.data() as Event; // Cast to Event type
-        const currentBookedSlots = eventData.bookedSlots || [];
-        const totalSlots = eventData.totalSlots;
-
-        // Check if user already booked
-        if (currentBookedSlots.includes(userId)) {
-          alert('You have already booked a slot for this event.');
-          return; // Exit transaction
-        }
-
-        // Check if there are available slots
-        if (currentBookedSlots.length >= totalSlots) {
-          throw new Error('No more slots available for this event.');
-        }
-
-        // Update the bookedSlots array
-        const newBookedSlots = [...currentBookedSlots, userId];
-        transaction.update(eventRef, { bookedSlots: newBookedSlots });
-
-        // Optimistically update UI (optional but good for UX)
-        setEvents(prevEvents =>
-          prevEvents.map(event =>
-            event.id === eventId
-              ? { ...event, bookedSlots: newBookedSlots }
-              : event
-          )
-        );
-        alert('Slot booked successfully!');
+      // Firestore update using arrayUnion to avoid overwriting existing booked slots
+      await updateDoc(eventRef, {
+        bookedSlots: arrayUnion(user.uid),
       });
+
+      alert('Slot booked successfully!');
     } catch (e: any) {
-      console.error('Transaction failed: ', e);
+      console.error('Failed to book slot:', e);
       alert(`Failed to book slot: ${e.message}`);
+
+      // Rollback UI update if Firestore fails
+      setEvents(prevEvents =>
+        prevEvents.map(event =>
+          event.id === eventId
+            ? { ...event, bookedSlots: event.bookedSlots.filter(uid => uid !== user.uid) }
+            : event
+        )
+      );
     }
   };
 
@@ -104,7 +92,7 @@ const EventsPage: React.FC = () => {
         {events.map((event) => {
           const availableSlots = event.totalSlots - event.bookedSlots.length;
           const isBookedByUser = user && event.bookedSlots.includes(user.uid);
-          const isDisabled = availableSlots <= 0 || (isBookedByUser ?? false);
+          const isDisabled = availableSlots <= 0 || isBookedByUser;
 
           return (
             <div
@@ -121,7 +109,7 @@ const EventsPage: React.FC = () => {
               {user ? (
                 <button
                   onClick={() => handleBookSlot(event.id)}
-                  disabled={isDisabled}
+                  disabled={!!isDisabled}
                   className={`w-full px-4 py-2 rounded-md font-semibold ${
                     isDisabled
                       ? 'bg-gray-400 cursor-not-allowed'

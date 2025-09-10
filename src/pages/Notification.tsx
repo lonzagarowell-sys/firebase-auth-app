@@ -1,15 +1,8 @@
 // src/pages/Notifications.tsx
 import { useEffect, useState } from "react";
 import { db, auth } from "../firebase";
-import {
-  collection,
-  onSnapshot,
-  query,
-  orderBy,
-  updateDoc,
-  doc,
-  arrayUnion,
-} from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { onAuthStateChanged, signInAnonymously, type User } from "firebase/auth";
 
 interface Notification {
   id: string;
@@ -21,22 +14,33 @@ interface Notification {
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const currentUser = auth.currentUser;
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
 
-  if (!currentUser) {
-    return (
-      <div className="p-6 text-white">
-        <p>Please log in to see notifications.</p>
-      </div>
-    );
-  }
-
+  // Handle auth (anonymous if needed)
   useEffect(() => {
-    const q = query(
-      collection(db, "notifications"),
-      orderBy("createdAt", "desc")
-    );
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+      } else {
+        try {
+          const anonUser = await signInAnonymously(auth);
+          setUser(anonUser.user);
+        } catch (err) {
+          console.error("Anonymous sign-in failed:", err);
+        }
+      }
+      setLoading(false);
+    });
 
+    return unsubscribe;
+  }, []);
+
+  // Fetch notifications once user is ready
+  useEffect(() => {
+    if (!user || loading) return;
+
+    const q = query(collection(db, "notifications"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setNotifications(
         snapshot.docs.map((doc) => ({
@@ -47,49 +51,25 @@ export default function Notifications() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user, loading]);
 
-  const markAsRead = async (id: string) => {
-    try {
-      await updateDoc(doc(db, "notifications", id), {
-        readBy: arrayUnion(currentUser.uid),
-      });
-    } catch (err) {
-      console.error("Error marking notification as read:", err);
-    }
-  };
+  if (loading) {
+    return <p className="text-white p-4">Loading notifications...</p>;
+  }
 
   return (
-    <div className="p-6 text-white">
+    <div className="p-6 bg-gray-900 text-white min-h-screen">
       <h1 className="text-2xl font-bold mb-4">🔔 Notifications</h1>
       {notifications.length === 0 ? (
         <p>No notifications.</p>
       ) : (
         <ul className="space-y-2">
-          {notifications.map((n) => {
-            const isRead = n.readBy?.includes(currentUser.uid);
-            return (
-              <li
-                key={n.id}
-                className={`border-b py-2 flex justify-between items-center ${
-                  isRead ? "text-gray-400" : "text-white"
-                }`}
-              >
-                <div>
-                  <p className="font-semibold">{n.title}</p>
-                  {n.message && <p className="text-sm">{n.message}</p>}
-                </div>
-                {!isRead && (
-                  <button
-                    onClick={() => markAsRead(n.id)}
-                    className="ml-4 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    Mark as read
-                  </button>
-                )}
-              </li>
-            );
-          })}
+          {notifications.map((n) => (
+            <li key={n.id} className="border-b py-2">
+              {n.title && <p className="font-semibold">{n.title}</p>}
+              {n.message && <p>{n.message}</p>}
+            </li>
+          ))}
         </ul>
       )}
     </div>
